@@ -1,0 +1,10 @@
+# idea
+.idea/
+
+# python venv
+venv/
+
+# test cookie file
+live/Room_test.cookie.txt
+
+vendor/
