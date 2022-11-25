@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2022 tursom. All rights reserved.
+ * Use of this source code is governed by a GPL-3
+ * license that can be found in the LICENSE file.
+ */
+
 package live
 
 import (
@@ -12,12 +18,25 @@ import (
 	"github.com/tursom/GoCollections/exceptions"
 )
 
+const (
+	sendDanmuURL   = "https://api.live.bilibili.com/msg/send"
+	danmuColorsURL = "https://api.live.bilibili.com/xlive/web-room/v1/dM/GetDMConfigByGroup?room_id=%d"
+)
+
 type (
+	/*
+	 * Room interface to access an specific live room
+	 */
 	Room interface {
-		SetCookie(cookie string)
+		// ID get live room id
 		ID() uint32
+		// SetCookie set user cookie
+		SetCookie(cookie string)
+		// Send send danmu
 		Send(msg string) (*DanmuResp, exceptions.Exception)
+		// SendDanmu send danmu with more infos
 		SendDanmu(danmu *Danmu) (*DanmuResp, exceptions.Exception)
+		// GetDanmuColors get available colors of danmu
 		GetDanmuColors() (*DanmuColors, exceptions.Exception)
 	}
 
@@ -26,6 +45,9 @@ type (
 		cookie string
 	}
 
+	/*
+	 * Danmu danmu send info
+	 */
 	Danmu struct {
 		Bubble    int32  `json:"bubble,omitempty"`
 		Msg       string `json:"msg,omitempty"`
@@ -38,6 +60,9 @@ type (
 		CsrfToken string `json:"csrf_token,omitempty"`
 	}
 
+	/*
+	 * Danmu danmu send response
+	 */
 	DanmuResp struct {
 		Code int `json:"code"`
 		Data struct {
@@ -51,6 +76,9 @@ type (
 		Msg     string `json:"msg"`
 	}
 
+	/*
+	 * Danmu available danmu color
+	 */
 	DanmuColors struct {
 		Code int `json:"code"`
 		Data struct {
@@ -98,11 +126,13 @@ func (r *roomImpl) ID() uint32 {
 }
 
 func (r *roomImpl) Send(msg string) (*DanmuResp, exceptions.Exception) {
+	// check cookie status
 	if r.cookie == "" {
 		// return err that no cookie set
 		return nil, exceptions.NewIllegalParameterException("cookie not set", nil)
 	}
 
+	// send danmu
 	return r.SendDanmu(&Danmu{
 		Bubble:    0,
 		Msg:       msg,
@@ -117,13 +147,16 @@ func (r *roomImpl) Send(msg string) (*DanmuResp, exceptions.Exception) {
 }
 
 func (r *roomImpl) SendDanmu(danmu *Danmu) (*DanmuResp, exceptions.Exception) {
+	// check cookie status
 	if r.cookie == "" {
 		// return err that no cookie set
 		return nil, exceptions.NewIllegalParameterException("cookie not set", nil)
 	}
 
+	// build request object
 	request := client.R()
 
+	// build danmu param with multipart/form-data
 	form, boundary, exception := multipartForm(danmu)
 	if exception != nil {
 		return nil, exception
@@ -131,11 +164,13 @@ func (r *roomImpl) SendDanmu(danmu *Danmu) (*DanmuResp, exceptions.Exception) {
 
 	request.SetBody(form)
 
-	//request, err := http.NewRequest("POST", "https://api.live.bilibili.com/msg/send", form)
+	// build request object
+	//request, err := http.NewRequest("POST", sendDanmuURL, form)
 	//if err != nil {
 	//	return nil, exceptions.Package(err)
 	//}
 
+	// build request headers
 	//request.Header.Add("Accept", "*/*")
 	request.Header.Set("Cookie", r.cookie)
 	//request.Header.Set("Origin", "https://live.bilibili.com")
@@ -150,15 +185,21 @@ func (r *roomImpl) SendDanmu(danmu *Danmu) (*DanmuResp, exceptions.Exception) {
 	//request.Header.Set("Sec-Fetch-Site", "same-site")
 	//request.Header.Set("content-length", strconv.Itoa(len(form)))
 
+	// send request
 	//do, err := http.DefaultClient.Do(request)
-	do, err := request.Post("https://api.live.bilibili.com/msg/send")
+	do, err := request.Post(sendDanmuURL)
+	if err != nil {
+		return nil, exceptions.Package(err)
+	}
+
+	// check response http status
 	if do.StatusCode() != 200 {
 		// return err
-		fmt.Println(string(do.Body()))
 		return nil, exceptions.NewPackageException(fmt.Sprintf("send response status failed: %d", do.StatusCode()),
 			exceptions.Cfg().SetCause(do.StatusCode))
 	}
 
+	// parse response data
 	var resp DanmuResp
 	err = json.Unmarshal(do.Body(), &resp)
 	if err != nil {
@@ -168,6 +209,7 @@ func (r *roomImpl) SendDanmu(danmu *Danmu) (*DanmuResp, exceptions.Exception) {
 	return &resp, nil
 }
 
+// multipartForm build multipart/form-data by send danmu of body data
 func multipartForm(danmu *Danmu) (formData []byte, boundary string, exception exceptions.Exception) {
 	formBuffer := bytes.NewBuffer(nil)
 	formWriter := multipart.NewWriter(formBuffer)
@@ -222,26 +264,29 @@ func multipartForm(danmu *Danmu) (formData []byte, boundary string, exception ex
 		return nil, "", exceptions.Package(err)
 	}
 
-	formBytes := formBuffer.Bytes()
-	fmt.Println(string(formBytes))
-
-	return formBytes, formWriter.Boundary(), nil
+	return formBuffer.Bytes(), formWriter.Boundary(), nil
 }
 
+// GetDanmuColors get available colors of danmu sending
 func (r *roomImpl) GetDanmuColors() (*DanmuColors, exceptions.Exception) {
-	url := fmt.Sprintf("https://api.live.bilibili.com/xlive/web-room/v1/dM/GetDMConfigByGroup?room_id=%d", r.id)
+	// build request URL
+	url := fmt.Sprintf(danmuColorsURL, r.id)
 
+	// build request object
 	request := client.R()
 
+	// check cookie status
 	if r.cookie != "" {
 		request.Header.Set("Cookie", r.cookie)
 	}
 
+	// send http request
 	response, err := request.Get(url)
 	if err != nil {
 		return nil, exceptions.Package(err)
 	}
 
+	// parse http response
 	var colors DanmuColors
 	err = json.Unmarshal(response.Body(), &colors)
 	if err != nil {

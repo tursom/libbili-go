@@ -1,5 +1,6 @@
 # idea
 .idea/
+!.idea/scopes/source_file.xml
 
 # python venv
 venv/
